@@ -1,3 +1,13 @@
+# -*- coding: utf-8 -*-
+#
+# GridTools
+#
+# Copyright (c) 2014-2021, ETH Zurich
+# All rights reserved.
+#
+# Please, refer to the LICENSE file in the root directory.
+# SPDX-License-Identifier: BSD-3-Clause
+
 import math
 import typing
 import functools
@@ -340,12 +350,15 @@ class UnionRange(IntegerSet, UnionMixin):
     def __hash__(self):
         return hash(tuple(hash(arg) for arg in self.args))
 
+_empty_cartesian_cache={}
 
 class CartesianSet(Set):
     """A set of (cartesian indices, i.e. tuples of integers)"""
     # todo: implement abstract methods
     def empty_set(self):
-        return functools.reduce(operator.mul, itertools.repeat(UnitRange(0, 0), self.dim))
+        if self.dim not in _empty_cartesian_cache:
+            _empty_cartesian_cache[self.dim] = functools.reduce(operator.mul, itertools.repeat(UnitRange(0, 0), self.dim))
+        return _empty_cartesian_cache[self.dim]
 
     def universe(self):
         return functools.reduce(operator.mul, itertools.repeat(UnitRange(-math.inf, math.inf), self.dim))
@@ -375,6 +388,11 @@ class ProductSet(CartesianSet):
         assert len(args) > 1
 
         self.args = args
+
+    @classmethod
+    def from_coords(cls, p1: Tuple, p2: Tuple):
+        assert len(p1) == len(p2)
+        return functools.reduce(operator.mul, (UnitRange(first, last+1) for (first, last) in zip(p1, p2)))
 
     @property
     def size(self):
@@ -529,7 +547,7 @@ class UnionCartesian(CartesianSet, UnionMixin):
                     if covering.issubset(a):
                         rest = [set_.without(curr) for set_ in a.args if
                                 not set_.issubset(covering) and set_ != curr and set_ != touching_set]
-                        merged = union(union(*rest, disjoint=a.disjoint, simplify=False) if len(rest) > 0 else a.empty_set(), covering, disjoint=a.disjoint, simplify=False)
+                        merged = union(union(*rest, disjoint=a.disjoint, simplify=False) if len(rest) > 0 else a.empty_set(), covering, disjoint=False, simplify=False)
                         if isinstance(merged, ProductSet):
                             return merged
                         elif isinstance(merged, UnionCartesian):
@@ -544,7 +562,7 @@ class UnionCartesian(CartesianSet, UnionMixin):
                 # reset simplification to merged a
                 if converged == False:
                     break
-        return a
+        return a.make_disjoint()
 
     def __hash__(self):
         return hash(tuple(hash(arg) for arg in self.args))
@@ -556,9 +574,10 @@ class IndexSpace:
     """
     subset: Dict[Any, CartesianSet]
 
-    def __init__(self, definition: CartesianSet):
+    def __init__(self, definition: CartesianSet = None):
         self.subset = {}
-        self.subset["definition"] = definition
+        if definition:
+            self.subset["definition"] = definition
 
     @classmethod
     def from_sizes(cls, n_i: int, n_j: int, n_k: int):
@@ -595,6 +614,27 @@ class IndexSpace:
 
     def add_subset(self, name, subset):
         self.subset[name] = subset.simplify()
+
+    def decompose(self, parts_per_dim: Tuple[int, int, int]):
+        def dim_splitters(n, length):
+            import numpy as np
+            "Divide `length` long dimension into `n` parts"
+            interval_length = math.floor(length/n)
+            return [i*interval_length for i in range(n)] + [length]
+
+        splitters = [dim_splitters(num_parts, self.covering.shape[dim]) for dim, num_parts in enumerate(parts_per_dim)]
+
+        coords = list(itertools.product(*[range(0, parts) for parts in parts_per_dim]))
+        index_spaces = {coord: None for coord in coords}
+
+        for coord in coords:
+            coord_idx_space = IndexSpace()
+            for name, subset in self.subset.items():
+                subset_part = subset[tuple(slice(splitters[dim][coord_l], splitters[dim][coord_l+1]) for dim, coord_l in enumerate(coord))]
+                coord_idx_space.add_subset(name, subset_part)
+            index_spaces[coord] = coord_idx_space
+
+        return index_spaces
 
     def __str__(self):
         result = f"{self.__repr__()}\n  subsets:\n"
