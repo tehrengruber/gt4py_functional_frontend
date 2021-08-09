@@ -11,16 +11,22 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from iterator.atlas_utils import AtlasTable
+import numpy as np
+
 from iterator.embedded import NeighborTableOffsetProvider, np_as_located_field
 from iterator.runtime import *
 from iterator.builtins import *
 from iterator import library
-from .fvm_nabla_setup import (
-    assert_close,
-    nabla_setup,
-)
-import numpy as np
+
+try:
+    from iterator.atlas_utils import AtlasTable
+    from .fvm_nabla_setup import (
+        assert_close,
+        nabla_setup,
+    )
+except:
+    import pytest
+    pytestmark = pytest.mark.skipif(True, reason="fvm_nabla setup failed. maybe atlas4py is not installed?")
 
 
 Vertex = CartesianAxis("Vertex")
