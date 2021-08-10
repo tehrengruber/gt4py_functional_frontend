@@ -50,8 +50,7 @@ def fencil(x, y, z, output, input):
 fencil(*([None] * 5), backend="lisp")
 fencil(*([None] * 5), backend="cpptoy")
 
-from gt4py_fvlo.model import Field, fmap, UnitRange
-from gt4py_fvlo.tracing.tracing import tracable
+from gt4py_fvlo.model import Field, fmap, located_field_as_fvlo_field, tracable
 def laplacian(field: "Field"):
     @tracable
     def stencil(f):
@@ -71,16 +70,21 @@ def naive_lap(inp):
                 )
     return out
 
-
-def test_anton_toy():
+def fixture_anton_toy():
     shape = [5, 7, 9]
     rng = np.random.default_rng()
     inp = np_as_located_field(IDim, JDim, KDim, origin={IDim: 1, JDim: 1, KDim: 0})(
         rng.normal(size=(shape[0] + 2, shape[1] + 2, shape[2])),
     )
-    out = np_as_located_field(IDim, JDim, KDim)(np.zeros(shape))
     ref = naive_lap(inp)
 
+    return shape, inp, ref
+
+def test_anton_toy():
+    shape, inp, ref = fixture_anton_toy()
+
+    # semantic-model
+    out = np_as_located_field(IDim, JDim, KDim)(np.zeros(shape))
     fencil(
         shape[0],
         shape[1],
@@ -90,10 +94,11 @@ def test_anton_toy():
         backend="double_roundtrip",
         offset_provider={"i": IDim, "j": JDim},
     )
-
-    inp_field = Field(UnitRange(-1, shape[0]+1)*UnitRange(-1, shape[1]+1)*UnitRange(0, shape[2]), inp.array())
-    inp_field2 = inp_field.transparent_view(inp_field.domain[1:-1, 1:-1, :])
-    out2 = laplacian(inp_field2)
-    assert np.allclose(out2.image, ref)
-
     assert np.allclose(out, ref)
+
+    # fvlo
+    inp_fvlo_with_halo = located_field_as_fvlo_field(inp, origin=(1, 1, 0))
+    inp_fvlo = inp_fvlo_with_halo.transparent_view(inp_fvlo_with_halo.domain[1:-1, 1:-1, :])
+
+    out_fvlo = laplacian(inp_fvlo)
+    assert np.allclose(out_fvlo.image, ref)

@@ -394,6 +394,10 @@ class ProductSet(CartesianSet):
         assert len(p1) == len(p2)
         return functools.reduce(operator.mul, (UnitRange(first, last+1) for (first, last) in zip(p1, p2)))
 
+    @classmethod
+    def from_shape(cls, shape):
+        return functools.reduce(operator.mul, (UnitRange(0, s) for s in shape))
+
     @property
     def size(self):
         return functools.reduce(operator.mul, self.shape)

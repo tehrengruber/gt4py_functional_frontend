@@ -110,3 +110,11 @@ def apply_stencil(stencil: "Callable", domain, *fields):
 @tracable
 def fmap(stencil: "Callable", field: "Field"):
     return apply_stencil(stencil, field.domain, field)
+
+# adapter to iterator view fields
+def located_field_as_fvlo_field(located_field, origin=None):
+    image = located_field.array()
+    domain = ProductSet.from_shape(image.shape)
+    if origin:
+        domain = domain.translate(*(-o for o in origin))
+    return Field(domain, image)
