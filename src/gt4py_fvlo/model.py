@@ -1,21 +1,9 @@
-import ast
 import operator
-from copy import copy
-import types
-from types import LambdaType
 from typing import List, Callable, Tuple, Any, Union, Literal
-import inspect
-import textwrap
-import tempfile
-import eve.datamodels as datamodels
-from functools import reduce
-import typing_inspect
-from eve.datamodels import DataModel, field
-from gt4py_fvlo.utils.index_space import UnitRange, ProductSet, CartesianSet, intersect, union
-import gt4py_fvlo
 import numpy as np
-
-from gt4py_fvlo.tracing.tracing import tracable, is_tracable, isinstance_, if_, zip_, tuple_
+from eve.datamodels import DataModel, field
+from .utils.index_space import UnitRange, ProductSet, CartesianSet, intersect, union
+from .tracing.tracing import tracable, is_tracable, isinstance_, if_, zip_, tuple_
 
 
 class AbstractField:
@@ -42,7 +30,6 @@ image_type = np.ndarray
 def map_(stencil, domain):
     return np.array([stencil(*idx) for idx in domain]).reshape(domain.shape)
 
-#getitem(map(lambda i, j: getitem(field, (i, j)), domain), (i, j)) = field(i, j)
 
 class Field(DataModel, AbstractField):
     domain: ProductSet

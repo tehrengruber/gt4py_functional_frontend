@@ -69,7 +69,7 @@ def test_hdiff(hdiff_reference):
     assert np.allclose(out[:, :, 0], out_s)
 
 
-from gt4py_fvlo.model import Field, fmap, located_field_as_fvlo_field, tracable, UnitRange, apply_stencil, ProductSet, if_
+from gt4py_fvlo.model import Field, fmap, tracable, UnitRange, apply_stencil, ProductSet, if_
 
 @tracable
 def laplacian(inp):
