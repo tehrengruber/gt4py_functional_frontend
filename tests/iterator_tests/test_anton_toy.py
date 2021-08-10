@@ -1,3 +1,5 @@
+import itertools
+
 from iterator.builtins import *
 from iterator.embedded import np_as_located_field
 from iterator.runtime import *
@@ -48,6 +50,15 @@ def fencil(x, y, z, output, input):
 fencil(*([None] * 5), backend="lisp")
 fencil(*([None] * 5), backend="cpptoy")
 
+from gt4py_fvlo.model import Field, fmap, UnitRange
+from gt4py_fvlo.tracing.tracing import tracable
+def laplacian(field: "Field"):
+    @tracable
+    def stencil(f):
+        return -4 * f(0, 0, 0) + f(-1, 0, 0) + f(1, 0, 0) + f(0, -1, 0) + f(0, 1, 0)
+
+    return fmap(stencil, field)
+
 
 def naive_lap(inp):
     shape = [inp.shape[0] - 2, inp.shape[1] - 2, inp.shape[2]]
@@ -79,5 +90,10 @@ def test_anton_toy():
         backend="double_roundtrip",
         offset_provider={"i": IDim, "j": JDim},
     )
+
+    inp_field = Field(UnitRange(-1, shape[0]+1)*UnitRange(-1, shape[1]+1)*UnitRange(0, shape[2]), inp.array())
+    inp_field2 = inp_field.transparent_view(inp_field.domain[1:-1, 1:-1, :])
+    out2 = laplacian(inp_field2)
+    assert np.allclose(out2.image, ref)
 
     assert np.allclose(out, ref)

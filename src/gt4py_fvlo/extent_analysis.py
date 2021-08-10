@@ -20,10 +20,12 @@ class ClosureWrapper(tracing.ClosureWrapper):
             return sym
         return super(ClosureWrapper, self).wrap(arg)
 
-def extent_analysis(wrapped_stencil: Callable, fields: Sequence[AbstractField]):
+def extent_analysis(num_dims, wrapped_stencil: Callable, fields: Sequence[AbstractField]):
     closure_wrapper = ClosureWrapper()
 
-    symbolic_stencil = tracing.trace(wrapped_stencil, tuple(Symbol(name=dim, type_=int) for dim in ("I", "J")), closure_wrapper=closure_wrapper.wrap).expr
+    symbolic_stencil = tracing.trace(wrapped_stencil, tuple(
+        Symbol(name=dim, type_=int) for _, dim in zip(range(0, num_dims), ("I", "J", "K"))),
+                                     closure_wrapper=closure_wrapper.wrap).expr
 
     symtable = {sym: sym for sym in closure_wrapper.closure_fields.keys()}
 

@@ -92,7 +92,7 @@ def apply_stencil(stencil: "Callable", domain, *fields):
 
         from .extent_analysis import extent_analysis
 
-        per_field_accesses = extent_analysis(wrapped_stencil, fields)
+        per_field_accesses = extent_analysis(domain.dim, wrapped_stencil, fields)
 
         per_field_valid_domains = []
         for field, accesses in zip(fields, per_field_accesses):
