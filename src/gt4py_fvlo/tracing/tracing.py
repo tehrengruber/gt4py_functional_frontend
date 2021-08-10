@@ -17,15 +17,14 @@ from .pass_helper.conversion import beta_reduction, alpha_conversion
 from .tracerir_utils import symbolic_args_from_args, evaluate_py_func, let_reduction
 
 class ClosureWrapper:
-    @classmethod
-    def wrap(cls, arg):
+    def wrap(self, arg):
         if isinstance(arg, (int, str)):
             return Constant(arg)
         elif isinstance(arg, DataModel):
             return OpaqueCall(PyClosureVar(type(arg)), args=(),
                               kwargs={k: cls.wrap(v) for k, v in attr.asdict(arg, recurse=False).items()})
         elif isinstance(arg, tuple):
-            return Tuple_(tuple(cls.wrap(el) for el in arg))
+            return Tuple_(tuple(self.wrap(el) for el in arg))
         elif isinstance(arg, Callable) and not inspect.isclass(arg):
             return PyExternalFunction(arg)
 
@@ -203,6 +202,8 @@ def tracable(func):
     _tracable.add(func)
     return func
 
+def is_tracable(func):
+    return func in _tracable
 
 def trace(func, symbolic_args=None, symbolic_kwargs=None, closure_wrapper=wrap_closure_var):
     func_uid = f"{func.__name__}_{hashlib.md5(inspect.getsource(func).encode('utf-8')).hexdigest()}"

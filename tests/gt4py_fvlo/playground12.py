@@ -1,234 +1,9 @@
-import ast
-import operator
-from copy import copy
-import types
-from types import LambdaType
-from typing import List, Callable, Tuple, Any, Union, Literal
-import inspect
-import textwrap
-import tempfile
-import eve.datamodels as datamodels
-import typing_inspect
-from eve.datamodels import DataModel, field
-from gt4py_fvlo.utils.index_space import UnitRange, ProductSet, CartesianSet, intersect, union
-import gt4py_fvlo
 import numpy as np
 
-from gt4py_fvlo.tracing.tracing import trace, tracable, isinstance_, if_, tuple_, zip_, OpaqueCall, PyClosureVar, PyExternalFunction, DataModelConstruction
+from gt4py_fvlo.utils.index_space import UnitRange, ProductSet, CartesianSet, intersect, union
 
-from gt4py_fvlo.generic import Lambda, BuiltInFunction, Constant, Call, Symbol, Tuple_, GenericIRNode, Function, Let, Var
-
-class Stencil(DataModel):
-    impl: Callable
-    extent: Tuple[Union[int, Tuple[int, int]], ...]
-
-    @tracable
-    def __call__(self, *args):
-        return self.impl(*args)
-
-
-class AbstractField:
-    pass
-
-
-class LazyMap(DataModel):
-    func: Callable
-    domain: ProductSet
-
-    def __getitem__(self, memory_idx):
-        origin = self.domain[0, 0]
-        image_idx = tuple(image_idx + o for image_idx, o in zip(memory_idx, origin))
-        assert image_idx in domain
-        return self.func(image_idx)
-
-    def materialize(self):
-        return np.array([self.func(idx) for idx in self.domain]).reshape(self.domain.shape)
-
-#image_type = LazyMap
-#def _map(stencil, domain):
-#    return LazyMap(stencil, domain)
-
-image_type = np.ndarray
-def map_(stencil, domain):
-    return np.array([stencil(*idx) for idx in domain]).reshape(domain.shape)
-
-#getitem(map(lambda i, j: getitem(field, (i, j)), domain), (i, j)) = field(i, j)
-
-class Field(DataModel, AbstractField):
-    domain: ProductSet
-    image: image_type
-
-    #@tracable
-    def __getitem__(self, image_idx):
-        assert image_idx in self.domain
-        origin = self.domain[0, 0]
-        memory_idx = tuple(idx-o for idx, o in zip_(image_idx, origin))
-        return self.image[memory_idx]
-
-    def view(self, domain):
-        assert domain.issubset(self.domain)
-        return apply_stencil(lambda *idx: self[idx], domain)
-
-    def transparent_view(self, domain):
-        if domain == self.domain:
-            return self
-        return TransparentView(domain, self)
-
-
-class TransparentView(DataModel, AbstractField):
-    domain: ProductSet
-    field: Field
-
-    def __getitem__(self, position):
-        assert position in self.field.domain
-        return self.field[position]
-
-@tracable
-def new_accessor(field, position):
-    def accessor(*shift):
-        gen = (idx+s for idx, s in zip_(position, shift))
-        idx = tuple_(gen)
-        return field[idx]
-    return accessor
-
-def extent_analysis(wrapped_stencil, fields):
-    import gt4py_fvlo.tracing.tracing as tracing
-    from gt4py_fvlo.tracing.tracerir_utils import let_reduction
-    from gt4py_fvlo.utils.uid import uid
-
-    closure_fields = {}
-
-    class ClosureWrapper(tracing.ClosureWrapper):
-        @classmethod
-        def wrap(cls, arg):
-            if isinstance(arg, AbstractField):
-                sym = Symbol(f"symbolic_field_{uid('symbolic_field_')}", type_=type(arg))
-                closure_fields[sym] = arg
-                return sym
-            return super(ClosureWrapper, cls).wrap(arg)
-
-    symbolic_stencil = trace(wrapped_stencil, tuple(Symbol(name=dim, type_=int) for dim in ("I", "J")), closure_wrapper=ClosureWrapper.wrap).expr
-
-    symtable = {sym: sym for sym in closure_fields.keys()}
-
-    from gt4py_fvlo.tracing.pass_helper.pass_manager import PassManager
-
-    from gt4py_fvlo.tracing.passes.constant_folding import ConstantFold
-    from gt4py_fvlo.tracing.passes.datamodel import DataModelConstructionResolver, DataModelMethodResolution, \
-        DataModelGetAttrResolver, DataModelCallOperatorResolution, DataModelExternalGetAttrInliner
-    from gt4py_fvlo.tracing.passes.opaque_call_resolution import OpaqueCallResolution1, OpaqueCallResolution2
-    from gt4py_fvlo.tracing.passes.fix_call_type import FixCallType
-    from gt4py_fvlo.tracing.passes.if_resolver import IfResolver
-    from gt4py_fvlo.tracing.passes.tuple_getitem_resolver import TupleGetItemResolver
-    from gt4py_fvlo.tracing.passes.remove_constant_refs import RemoveConstantRefs
-    from gt4py_fvlo.tracing.passes.tracable_function_resolver import TracableFunctionResolver
-    from gt4py_fvlo.tracing.passes.remove_unused_symbols import RemoveUnusedSymbols
-    from gt4py_fvlo.tracing.passes.single_use_inliner import SingleUseInliner
-
-    pass_manager = PassManager([
-        DataModelConstructionResolver(),
-        DataModelCallOperatorResolution(),
-        DataModelGetAttrResolver(),
-        DataModelMethodResolution(),
-        OpaqueCallResolution1(),
-        OpaqueCallResolution2(),
-        FixCallType(),
-        IfResolver(),
-        TupleGetItemResolver(),
-        RemoveConstantRefs(),
-        TracableFunctionResolver(closure_wrapper=ClosureWrapper.wrap)
-    ])
-
-    trc2 = pass_manager.visit(symbolic_stencil, symtable=symtable)
-
-    trc3 = ConstantFold().visit(trc2, symtable=symtable)
-
-    trc4 = PassManager([RemoveUnusedSymbols()]).visit(trc3, symtable=symtable)
-
-    from gt4py_fvlo.tracing.passes.global_symbol_collision_resolver import GlobalSymbolCollisionCollector, GlobalSymbolCollisionResolver
-    collisions = GlobalSymbolCollisionCollector.apply(trc4)
-    assert not collisions
-    #trc5 = GlobalSymbolCollisionResolver.apply(trc4, symtable=symtable)
-
-    trc6 = SingleUseInliner.apply(trc4, symtable=symtable)
-
-    trc7 = PassManager([DataModelExternalGetAttrInliner(), RemoveUnusedSymbols()]).visit(trc6, symtable=symtable)
-
-    from gt4py_fvlo.tracing.pass_helper.scope_visitor import ScopeVisitor
-    from gt4py_fvlo.tracing.pass_helper.conversion import beta_reduction, alpha_conversion
-    from gt4py_fvlo.tracing.pass_helper.materializer import Materializer
-    from gt4py_fvlo.tracing.tracerir_utils import resolve_symbol
-    import gt4py_fvlo.tracing.tracing as tracing
-
-    location = trc7.args
-
-    # todo: instead subtract and check constant
-
-    trc7 = alpha_conversion(trc7.expr, {idx: Constant(0) for idx in location}, closure_symbols=symtable)
-
-    class ExtentAnalysis(ScopeVisitor):
-        def visit_Call(self, node: Call, *, symtable, extents, **kwargs):
-            if isinstance(node.func, PyExternalFunction) and (node.func.func == Field.__getitem__ or node.func.func == TransparentView.__getitem__):
-                field_extent = Materializer().visit(node.args[1])
-                field_sym = node.args[0]
-                assert isinstance(field_sym, Symbol)
-                if not field_sym in extents:
-                    extents[field_sym] = []
-                extents[field_sym].append(field_extent)
-
-            return self.generic_visit(node, symtable=symtable, extents=extents, **kwargs)
-
-        @classmethod
-        def apply(cls, node):
-            extents = {}
-            super(ExtentAnalysis, cls).apply(node, extents=extents)
-            return extents
-
-    extents_per_symbol = ExtentAnalysis.apply(trc7)
-
-    from functools import reduce
-
-    extents = []
-    for field in fields:
-        accesses = []
-        for cf, f in closure_fields.items():
-            if id(f) == id(field) and cf in extents_per_symbol:
-                accesses.extend(extents_per_symbol[cf])
-
-        extents.append(set(accesses))
-
-    return extents
-
-@tracable
-def apply_stencil(stencil: "Callable", domain, *fields):
-    if len(fields) > 0:
-        from gt4py_fvlo.tracing.tracing import _tracable
-        assert stencil in _tracable
-        assert all(isinstance_(field, AbstractField) for field in fields)
-        @tracable
-        def wrapped_stencil(*pos):
-            return stencil(*(new_accessor(field, pos) for field in fields))
-
-        from functools import reduce
-
-        per_field_accesses = extent_analysis(wrapped_stencil, fields)
-
-        per_field_valid_domains = []
-        for field, accesses in zip(fields, per_field_accesses):
-            accessable_field_domain = field.field.domain if isinstance(field, TransparentView) else field.domain
-            per_field_valid_domains.append(intersect(accessable_field_domain, *(accessable_field_domain.translate(*map(operator.neg, access)) for access in accesses)))
-
-        valid_domain = intersect(*per_field_valid_domains)
-        domain = intersect(*(field.domain for field in fields))
-        if not domain.issubset(valid_domain):
-            raise ValueError("Not enough halo lines.")
-
-        return apply_stencil(wrapped_stencil, valid_domain).transparent_view(domain)
-    return Field(domain, map_(stencil, domain))
-
-@tracable
-def fmap(stencil, field: "Field"):
-    return apply_stencil(stencil, field.domain, field)
+from gt4py_fvlo.tracing.tracing import tracable
+from gt4py_fvlo.model import Field, fmap, apply_stencil, map_, if_
 
 @tracable
 def laplacian(field: "Field"):
@@ -236,6 +11,7 @@ def laplacian(field: "Field"):
         return -4 * f(0, 0) + f(-1, 0) + f(1, 0) + f(0, -1) + f(0, 1)
 
     return fmap(stencil, field)
+
 
 @tracable
 def laplap(field):
@@ -328,10 +104,10 @@ lap = apply_stencil(lambda i, j: lap_sten(i, j) if (i, j) in interior_domain els
 #
 @tracable
 def laplacian(input: "Field"):
-    def stencil(i, j):
-        return -4 * input[i, j] + input[i-1, j] + input[i+1, j] + input[i, j-1] + input[i, j+1]
+    def stencil(i, j, k):
+        return -4 * input[i, j, k] + input[i-1, j, k] + input[i+1, j, k] + input[i, j-1, k] + input[i, j+1, k]
 
-    return apply_stencil(stencil, input.domain[1:-1, 1:-1])
+    return apply_stencil(stencil, input.domain[1:-1, 1:-1, 1:-1])
 
 @tracable
 def laplap(field):
@@ -339,8 +115,8 @@ def laplap(field):
     laplap = laplacian(lap)
     return laplap
 
-domain = UnitRange(0, 5)*UnitRange(0, 5)
-input = apply_stencil(lambda i, j: 1/6*i**3, domain)
+domain = UnitRange(0, 5)*UnitRange(0, 5)*UnitRange(0, 5)
+input = apply_stencil(lambda i, j, k: 1/6*i**3, domain)
 
 result = laplap(input)
 

@@ -403,6 +403,10 @@ class ProductSet(CartesianSet):
         return self
 
     @property
+    def origin(self) -> Tuple[Integer, ...]:
+        return tuple(arg.start for arg in self.args)
+
+    @property
     def shape(self):
         return tuple(arg.size for arg in self.args)
 
