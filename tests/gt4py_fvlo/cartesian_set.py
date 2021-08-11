@@ -22,6 +22,10 @@ def test_product_set():
         assert arg[0] == 2
         assert arg[-1] == 9
 
+    set3 = ref_set[1, :, 1:-1]
+    assert set3.size == 10 * 8
+    assert set3 == UnitRange(1, 11)*UnitRange(2, 10)
+
     # ensure ref_set has not changed
     assert ref_set.size == 10 * 10 * 10
 

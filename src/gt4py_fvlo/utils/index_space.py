@@ -385,7 +385,7 @@ class ProductSet(CartesianSet):
 
     def __init__(self, *args: Sequence[UnitRange]):
         assert all(isinstance(arg, UnitRange) for arg in args)
-        assert len(args) > 1
+        #assert len(args) > 1
 
         self.args = args
 
@@ -473,12 +473,14 @@ class ProductSet(CartesianSet):
     def __iter__(self):
         # memory-lightweight itertools.product like iterator
         for i in self.args[0]:
-            if len(self.args[1:]) > 1:
+            if len(self.args) > 2:
                 for tail in functools.reduce(operator.mul, self.args[1:]):
                     yield i, *tail
-            else:  # break recursion
+            elif len(self.args) == 2:  # break recursion
                 for j in self.args[1]:
                     yield i, j
+            else:
+                yield (i,)
 
     def __eq__(self, other):
         if isinstance(other, Set):
@@ -506,8 +508,11 @@ class ProductSet(CartesianSet):
             return tuple(r[i] for r, i in zip(self.args, args))
         elif all(isinstance(arg, slice) for arg in args):
             return ProductSet(*(r[s] for r, s in zip(self.args, args)))
+        elif all(isinstance(arg, (int, slice)) for arg in args):
+            assert all(i in r for r, i in zip(self.args, args) if isinstance(i, int))
+            return ProductSet(*(r[s] for r, s in zip(self.args, args) if isinstance(s, slice)))
 
-        raise ValueError("Invalid argument `f{arg}`")
+        raise ValueError(f"Invalid argument `{args}`")
 
     def __mul__(self, other: UnitRange):
         if not isinstance(other, UnitRange):
