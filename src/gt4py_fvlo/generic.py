@@ -9,11 +9,9 @@ from .utils.uid import uid
 class GenericIRNode(DataModel):
     pass
 
+
 class Constant(GenericIRNode):
     val: Union[int, str, bool, float]
-
-    def __repr__(self):
-        return str(self.val)
 
 
 class Symbol(GenericIRNode):

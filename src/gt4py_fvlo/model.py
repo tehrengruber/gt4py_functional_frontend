@@ -22,9 +22,11 @@ class LazyMap(DataModel):
     def materialize(self):
         return np.array([self.func(idx) for idx in self.domain]).reshape(self.domain.shape)
 
+def lazy_map(stencil, domain):
+    return LazyMap(stencil, domain)
+
 #image_type = LazyMap
-#def _map(stencil, domain):
-#    return LazyMap(stencil, domain)
+#map_ = lazy_map
 
 image_type = np.ndarray
 def map_(stencil, domain):
@@ -37,6 +39,18 @@ class Field(DataModel, AbstractField):
 
     #@tracable
     def __getitem__(self, image_idx):
+        # make sure we have a tuple even for 1d fields
+        image_idx = (image_idx,) if isinstance(image_idx, int) else image_idx
+
+        if any(isinstance(idx, slice) for idx in image_idx):
+            assert all(not isinstance(idx, slice) or idx == slice(None) for idx in image_idx)
+            relative_idx = tuple(slice(None) if idx == slice(None) else idx - o for idx, o in zip_(image_idx, self.domain.origin))
+            return Field(self.domain[relative_idx], self.image[relative_idx])
+
+        if len(image_idx) != self.domain.dim:
+            raise TypeError()
+        if not image_idx in self.domain:
+            raise IndexError()
         assert image_idx in self.domain
         memory_idx = tuple(idx-o for idx, o in zip_(image_idx, self.domain.origin))
         return self.image[memory_idx]
@@ -92,6 +106,10 @@ def apply_stencil(stencil: "Callable", domain, *fields):
             raise ValueError("Not enough halo lines.")
 
         return apply_stencil(wrapped_stencil, valid_domain).transparent_view(domain)
+
+    if any(r.start == -math.inf or r.stop == math.inf for r in domain.args):
+        return Field(domain, lazy_map(stencil, domain))
+
     return Field(domain, map_(stencil, domain))
 
 @tracable

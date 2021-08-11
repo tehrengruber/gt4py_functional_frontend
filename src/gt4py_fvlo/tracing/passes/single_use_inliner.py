@@ -1,6 +1,7 @@
 from ..tracerir import *
 from ..pass_helper.scope_visitor import ScopeTranslator, ScopeVisitor
 from ..pass_helper.collect_symbol_refs import CollectSymbolRefs
+from .global_symbol_collision_resolver import GlobalSymbolCollisionCollector
 
 class SymbolRefDeclDepth(ScopeVisitor):
     def visit_Lambda(self, node: Lambda, *, decl_depths, depth, **kwargs):
@@ -33,6 +34,13 @@ class SingleUseInliner(ScopeTranslator):
         if symtable == None:
             symtable = {}
 
+        # ensure we have no symbol collisions
+        collisions = GlobalSymbolCollisionCollector.apply(node)
+        assert not collisions
+
+        # the actual inlining
         ref_counts = CollectSymbolRefs.apply(node, collect_inner=True)
         decl_depths = {**{sym: 0 for sym in symtable.keys()}, **SymbolRefDeclDepth.apply(node)}
-        return super(SingleUseInliner, cls).apply(node, ref_counts=ref_counts, decl_depths=decl_depths, symtable=symtable)
+        transformed_node = super(SingleUseInliner, cls).apply(node, ref_counts=ref_counts, decl_depths=decl_depths, symtable=symtable)
+
+        return transformed_node

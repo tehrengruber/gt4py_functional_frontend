@@ -22,4 +22,6 @@ class OpaqueCallResolution2:
         def call_node_type(expr):
             return Call if isinstance(expr, Function) else OpaqueCall
 
-        return Let(vars=node.func.vars, expr=call_node_type(node.func.expr)(func=node.func.expr, args=node.args, kwargs=node.kwargs))
+        let = node.func
+
+        return Let(vars=let.vars, expr=call_node_type(let.expr)(func=let.expr, args=node.args, kwargs=node.kwargs))

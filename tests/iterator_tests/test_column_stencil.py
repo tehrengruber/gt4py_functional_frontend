@@ -31,9 +31,10 @@ def test_column_stencil():
     inp = np_as_located_field(IDim, KDim)(
         np.fromfunction(lambda i, k: i * 10 + k, [shape[0] + 1, shape[1] + 1])
     )
-    out = np_as_located_field(IDim, KDim)(np.zeros(shape))
-
     ref = np.asarray(inp)[1:, 1:]
+
+    # semantic-model
+    out = np_as_located_field(IDim, KDim)(np.zeros(shape))
 
     fencil(shape[0], shape[1], inp, out, offset_provider={"I": IDim, "K": KDim})
 

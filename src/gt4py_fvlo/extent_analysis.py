@@ -63,11 +63,6 @@ def extent_analysis(num_dims, wrapped_stencil: Callable, fields: Sequence[Abstra
 
     trc4 = PassManager([RemoveUnusedSymbols()]).visit(trc3, symtable=symtable)
 
-    from gt4py_fvlo.tracing.passes.global_symbol_collision_resolver import GlobalSymbolCollisionCollector, GlobalSymbolCollisionResolver
-    collisions = GlobalSymbolCollisionCollector.apply(trc4)
-    assert not collisions
-    #trc5 = GlobalSymbolCollisionResolver.apply(trc4, symtable=symtable)
-
     trc6 = SingleUseInliner.apply(trc4, symtable=symtable)
 
     trc7 = PassManager([DataModelExternalGetAttrInliner(), RemoveUnusedSymbols()]).visit(trc6, symtable=symtable)
