@@ -6,6 +6,7 @@ import ast
 import os
 import re
 import attr
+import copy
 
 import typing_inspect
 
@@ -173,6 +174,11 @@ class Tracer:
             elif isinstance(parsed_args[0], Tuple_):
                 assert len(parsed_args)==1
                 return tuple(Tracer(el_expr) for el_expr in parsed_args[0].elts).__iter__()
+            elif isinstance(parsed_args[0], Symbol) and issubclass(typing_inspect.get_origin(parsed_args[0].type_), DataModel):
+                # generic datamodel with static size
+                assert issubclass(parsed_args[0].type_.__origin__.__len__.__self__, DataModel)
+                return tuple(Tracer(Call(func=BuiltInFunction("__getitem__"), args=(parsed_args[0], Constant(0)), kwargs={})) for i in
+                                    range(parsed_args[0].type_.__origin__.__len__())).__iter__()
             else:
                 raise ValueError
 
@@ -205,12 +211,17 @@ def tracable(func):
 def is_tracable(func):
     return func in _tracable
 
+
 def trace(func, symbolic_args=None, symbolic_kwargs=None, closure_wrapper=wrap_closure_var):
     func_uid = f"{func.__name__}_{hashlib.md5(inspect.getsource(func).encode('utf-8')).hexdigest()}"
 
     # prepare function sources
     func_ast = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    func_ast = copy.deepcopy(func_ast)
     func_ast.body[0].decorator_list = []  # remove decorator
+    args_ast = func_ast.body[0].args
+    for arg in [*args_ast.args, *args_ast.kwonlyargs, *args_ast.posonlyargs]:
+        arg.annotation = None
     func_source = ast.unparse(func_ast)
 
     closure_vars = getclosurevars(func)
