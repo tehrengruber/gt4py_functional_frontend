@@ -45,7 +45,7 @@ class LocalOperator(DataModel):
     func: Callable
     name_: Optional[str]
 
-@tracable
+
 def local_operator(func):
     return LocalOperator(func, None)
 
@@ -54,12 +54,33 @@ gt = SimpleNamespace(local_operator=local_operator)
 import numpy as np
 DT = np.double
 
+#
+# Indexing proposal
+#
 @gt.local_operator
 def stencil(
     inp: Field[[V], DT], v2v: Connectivity[V, V2V], *, position: Position[Tuple[V]]
 ):
     (v,) = position
     return inp[v2v[v, 0]] + inp[v2v[v, 1]] + inp[v2v[v, 2]] + inp[v2v[v, 3]]
+
+#
+# Transforming views
+#
+class LocalView(BuiltInType):
+    pass
+
+def v2v_conn():
+    raise TypeError("BuiltIn")
+
+@gt.local_operator
+def stencil(inp: LocalView[V, Field[V], DT]):
+    # import __gtscript__
+    # v2v_conn = __gtscript__.connectivities["v2v"]
+    # v2v_conn: Callable[[LocalView[V]], LocalView[[V, V2V]]] = gt.connectivities("v2v")
+    v_neighbors: LocalView[[V, V2V]] = v2v_conn(inp)
+    return v_neighbors[0] + v_neighbors[1] + v_neighbors[2] + v_neighbors[3]
+
 
 # todo: validate
 arg_spec = inspect.getfullargspec(stencil.func)
